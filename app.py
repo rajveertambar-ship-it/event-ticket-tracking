@@ -1,133 +1,96 @@
-import streamlit as st
 import hashlib
 import json
-import time
-from typing import List, Dict, Any
+from time import time
 
-# -----------------------
-# Blockchain Class
-# -----------------------
-class Blockchain:
-    """
-    Simple blockchain to store ticket transactions.
-    Each block contains a list of ticket purchases.
-    """
-    def __init__(self):
-        self.chain: List[Dict[str, Any]] = []
-        self.pending_tickets: List[Dict[str, Any]] = []
-        # Create the genesis block
-        self.new_block(proof=100, previous_hash="1")
+# Block class to define each individual block in the blockchain
+class Block:
+    def __init__(self, ticket_id, event_name, event_date, previous_hash=''):
+        self.ticket_id = ticket_id
+        self.event_name = event_name
+        self.event_date = event_date
+        self.timestamp = time()
+        self.previous_hash = previous_hash
+        self.hash = self.calculate_hash()
 
-    def new_block(self, proof: int, previous_hash: str = None) -> Dict[str, Any]:
-        """
-        Add a new block to the chain with all pending tickets.
-        """
-        block_tickets = [tx.copy() for tx in self.pending_tickets]  # avoid mutation
-        block = {
-            "index": len(self.chain) + 1,
-            "timestamp": time.time(),
-            "tickets": block_tickets,
-            "proof": proof,
-            "previous_hash": previous_hash or self.hash(self.chain[-1]),
-        }
-        self.pending_tickets = []  # reset pending list
-        block["hash"] = self.hash(block)  # store hash inside block
-        self.chain.append(block)
-        return block
-
-    def new_ticket(self, buyer: str, event: str) -> str:
-        """
-        Record a new ticket purchase.
-        Generates a unique ticket_id.
-        """
-        ticket_id = hashlib.sha256(
-            f"{buyer}{event}{time.time()}".encode()
-        ).hexdigest()[:10]  # short unique ID
-        ticket = {"buyer": buyer, "event": event, "ticket_id": ticket_id}
-        self.pending_tickets.append(ticket)
-        return ticket_id
-
-    @staticmethod
-    def hash(block: Dict[str, Any]) -> str:
-        """
-        Create SHA-256 hash of a block, excluding its own hash.
-        """
-        block_copy = block.copy()
-        block_copy.pop("hash", None)
-        block_string = json.dumps(block_copy, sort_keys=True).encode()
+    # Calculate the hash of the block using SHA-256
+    def calculate_hash(self):
+        block_string = json.dumps(self.__dict__, sort_keys=True).encode()
         return hashlib.sha256(block_string).hexdigest()
 
-    @property
-    def last_block(self) -> Dict[str, Any]:
-        return self.chain[-1]
+# Blockchain class to define the blockchain structure
+class Blockchain:
+    def __init__(self):
+        self.chain = []
+        self.pending_tickets = []
 
-    def is_chain_valid(self) -> bool:
-        """
-        Check blockchain integrity.
-        """
-        for i in range(1, len(self.chain)):
-            prev = self.chain[i - 1]
-            curr = self.chain[i]
-            if curr["previous_hash"] != prev["hash"]:
-                return False
-            if curr["hash"] != self.hash(curr):
-                return False
-        return True
+        # Genesis Block (the first block in the chain)
+        self.create_new_block(previous_hash='1', ticket_id="GENESIS", event_name="Genesis Event", event_date="2025-09-25")
 
-    def verify_ticket(self, ticket_id: str) -> bool:
-        """
-        Check if a ticket ID exists in the blockchain.
-        """
+    # Method to create a new block
+    def create_new_block(self, ticket_id, event_name, event_date, previous_hash):
+        new_block = Block(ticket_id, event_name, event_date, previous_hash)
+        self.chain.append(new_block)
+        return new_block
+
+    # Add a ticket purchase (block) to the chain
+    def add_ticket(self, ticket_id, event_name, event_date):
+        previous_block = self.chain[-1]
+        return self.create_new_block(ticket_id, event_name, event_date, previous_block.hash)
+
+    # Verify the validity of a ticket (check if it's in the blockchain)
+    def verify_ticket(self, ticket_id):
         for block in self.chain:
-            for t in block["tickets"]:
-                if t["ticket_id"] == ticket_id:
-                    return True
-        return False
+            if block.ticket_id == ticket_id:
+                return True  # Ticket found
+        return False  # Ticket not found
 
+    # Display the blockchain
+    def display_chain(self):
+        for block in self.chain:
+            print(f"Ticket ID: {block.ticket_id} | Event: {block.event_name} | Date: {block.event_date} | Hash: {block.hash}")
 
-# -----------------------
-# Streamlit App
-# -----------------------
-st.set_page_config(page_title="🎟️ Blockchain Event Ticketing", layout="wide")
+# Function to simulate ticket purchase and verification
+def simulate_ticket_system():
+    # Initialize the blockchain
+    blockchain = Blockchain()
 
-# Initialize blockchain in session
-if "blockchain" not in st.session_state:
-    st.session_state.blockchain = Blockchain()
+    while True:
+        print("\nBlockchain-based Event Ticketing System")
+        print("1. Purchase a ticket")
+        print("2. Verify a ticket")
+        print("3. View all tickets")
+        print("4. Exit")
+        
+        choice = input("Choose an option (1/2/3/4): ")
 
-bc: Blockchain = st.session_state.blockchain
+        if choice == "1":
+            ticket_id = input("Enter Ticket ID: ")
+            event_name = input("Enter Event Name: ")
+            event_date = input("Enter Event Date (YYYY-MM-DD): ")
+            
+            # Add ticket to blockchain
+            blockchain.add_ticket(ticket_id, event_name, event_date)
+            print(f"Ticket purchased! Ticket ID: {ticket_id} for event: {event_name}")
+        
+        elif choice == "2":
+            ticket_id = input("Enter Ticket ID to verify: ")
+            
+            # Verify the ticket validity
+            if blockchain.verify_ticket(ticket_id):
+                print("Ticket is valid.")
+            else:
+                print("Invalid ticket. It might be a fake.")
+        
+        elif choice == "3":
+            # Display all tickets in the blockchain
+            blockchain.display_chain()
+        
+        elif choice == "4":
+            print("Exiting system...")
+            break
+        else:
+            print("Invalid choice! Please try again.")
 
-st.title("🎟️ Blockchain-based Event Ticketing System")
-
-# Display chain info
-col1, col2 = st.columns(2)
-col1.metric("Chain Length", len(bc.chain))
-col2.metric("Is Chain Valid?", "✅ Yes" if bc.is_chain_valid() else "❌ No")
-
-# --- Purchase Ticket ---
-st.header("➕ Purchase Ticket")
-with st.form("purchase_form", clear_on_submit=True):
-    buyer = st.text_input("Buyer Name")
-    event = st.text_input("Event Name")
-    submitted = st.form_submit_button("Buy Ticket")
-    if submitted and buyer and event:
-        ticket_id = bc.new_ticket(buyer, event)
-        block = bc.new_block(proof=123)
-        st.success(f"✅ Ticket purchased! Ticket ID: {ticket_id}")
-        st.info(f"Recorded in Block {block['index']}.")
-
-# --- Verify Ticket ---
-st.header("🔍 Verify Ticket")
-ticket_input = st.text_input("Enter Ticket ID to Verify")
-if st.button("Check Ticket"):
-    if bc.verify_ticket(ticket_input):
-        st.success("✅ Valid ticket! This ticket exists on the blockchain.")
-    else:
-        st.error("❌ Invalid ticket! No such ticket recorded.")
-
-# --- Blockchain Explorer ---
-st.header("📜 Blockchain Explorer")
-for block in reversed(bc.chain):
-    with st.expander(f"Block {block['index']}"):
-        st.write("Previous Hash:", block.get("previous_hash", "N/A"))
-        st.write("Hash:", block.get("hash", "N/A"))
-        st.json(block.get("tickets", []))
+# Run the ticketing system
+if __name__ == "__main__":
+    simulate_ticket_system()
